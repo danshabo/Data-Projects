@@ -1,0 +1,528 @@
+---
+title: "Lab 3"
+author: "Dan Shabo"
+date: "8/6/2022"
+output:
+  html_document:
+    df_print: paged
+---
+```{r Libraries , echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(plotly)
+library(ggplot2)
+library(scales)
+library(splines)
+```
+
+```{r Set Directories , echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+directory <-
+  "C:/Users/Dan/Desktop/University/Statistics/Third Year/Statistical Learning/Lab3"
+setwd(directory)
+```
+
+**Question 1:**
+**Simulation - Implementing Kernel Regression **<br>
+**Simulation Function:**
+```{r Simulation Function}
+sample_f <- function(n = 1,
+                     use_x = c(),
+                     lambda,
+                     sigma2 = 0.3) {
+  if (length(use_x) > 0)
+  {
+    x = use_x
+  }
+  else
+  {
+    x <- runif(n, -2, 2)
+  }
+  f_x <- (sin(lambda * x) + 0.3 * x ^ 2 + ((x - 0.4) / 3) ^ 3)
+  epsilon <- rnorm(length(x), 0, sigma2)
+  y <- f_x + epsilon
+  
+  x_y = data.frame()
+  x_y <- rbind(x_y, x)
+  x_y <- rbind(x_y, y)
+  x_y <- t(x_y)
+  row.names(x_y) <- seq(1:nrow(x_y))
+  colnames(x_y) = list('x', 'y')
+  return (x_y)
+}
+```
+
+**Kernel Regression Implementation: **<br>
+We'd like to create a function that uses a Gaussian Kernel and applies regression. For this part, we're going to assume that $x$ is one-dimensional.
+We can get the kernel by using the following Gaussian function, where $h$ is the bandwidth:
+$$K_h(x_i, x) = \frac{1}{\sqrt{2\pi} \cdot h }e^{\frac{(x- x_i)^2}{2h^2}}$$
+
+
+**1.2 A function for calculating weights:** <br>
+```{r Calculating Weights Matrix Function}
+get_weights <- function (x_vector, h) {
+  weights_m = data.frame()
+  for (i in x_vector) {
+    n = length(x_vector)
+    weights <- c()
+    c1 = (1 / (((2 * pi) ^ 0.5) * h)) #Gaussian Kernel Constant
+    c2 = -(1 / 2) * (1 / h ^ 2) #Gaussian Exponential Constant
+    gaussian_kernel = c1 * exp(c2 * (rep(i, n) - x_vector) ^ 2)
+    weight_vector = gaussian_kernel / sum(gaussian_kernel)
+    weights_m <- rbind(weights_m, weight_vector)
+  }
+  return(weights_m)
+}
+```
+
+**1.2 Kernel Function:** <br>
+This function returns the weights matrix as well, so we can use them later. 
+```{r Kernel Function}
+kernel_regression <- function(train_x, train_y, h, test_x = 0) {
+  w_hat <- as.matrix(get_weights(train_x, h))
+  y_hat <- t(train_y) %*% w_hat
+  return(list(y_hat = y_hat, weights = w_hat))
+}
+```
+
+**1.3 Samplling a Dataset & Applying the function:** <br>
+We're going to sample a dataset with  $\lambda = 1.5, n = 60, h = bandwitdth = 0.5$. We picked $h = 0.5$ because it expresses the variance in the data in a way that recognizes the trends of $y$ values, but does not over fit.
+
+Then, We are calculating the Kerenel Regression by using the two functions above.
+Head of training data set and plot of our Kernel function:
+
+```{r Sample a Dataset}
+dataset <- sample_f(
+  n = 60,
+  use_x = c(),
+  lambda = 1.5,
+  sigma2 = 0.3
+)
+dataset_h1 <- kernel_regression(dataset[, 1], dataset[, 2], h = 0.5)
+knitr::kable(head(dataset))
+```
+```{r Kernel Plot, results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+plot(
+  x = dataset[, 1],
+  y = dataset[, 2],
+  col = rgb(0.4, 0.4, 0.8, 0.6),
+  pch = 20,
+  main = "Kernel Fitted Values",
+  xlab = "X Values",
+  ylab = "Y Values"
+)
+lines(
+  dataset[, 1][order(dataset[, 1])],
+  dataset_h1$y_hat[order(dataset[, 1])],
+  col = "dark red",
+  pch = 16,
+  xlim = range(dataset[, 1]),
+  ylim = dataset[, 2],
+  lwd = 3
+)
+legend(
+  x = "topright",
+  # Position
+  legend = c("Kernel Curve"),
+  # Legend texts
+  col = "dark red",
+  # Line colors
+  lwd = 3
+)                 # Line width
+```
+
+
+**1.2 Regression errors for Kernel Regression: <br>**
+In this part, we first created all the required functions, then used them all for different $h$ values.
+
+For the Empirical error (training set), we are going to use the following expression:
+$$e \bar{r} r[\hat{f}]=\frac{1}{n} \sum_{i} \ell\left(\hat{f}\left(\mathbf{x}_{i}\right), y_{i}\right)$$
+Where our loss function is set to be the mean squared error.
+
+```{r Empirical Error (Training Set Error)}
+err <- function(y, y_hat) {
+  n <- length(y_hat)
+  err <- (1 / n) * sum((y_hat - y) ^ 2) #Empirical Prediction Error
+  return(err)
+}
+```
+**Expected Optimism** <br>
+Now we'll estimate the expected Optimism using the weight matrix we got when we made the kernel regression:
+$$Eop =\frac{2 \sigma^{2}}{n} \operatorname{tr}(\mathbf{w})$$
+For this section, we assume that $\sigma^2$ is given and equals $0.3$. <br>
+$n = length(\hat{y})$.
+```{r Expected Optimisim Estimation}
+eop <- function(reg_weights_matrix = 0,
+                sigma2 = 0.3,
+                n) {
+  if (reg_weights_matrix != 0) {
+    tr_w <- sum(diag(kernel3$weights)) #Trace of weights matrix
+    eop <-
+      (2 * sigma2 * tr_w) / n # Expression for Expected Optimism (given sigma2)
+  }
+  else{
+    eop <- 2 * sigma2 / n
+  }
+  return(eop)
+}
+```
+
+**5-Fold Cross Validation:**<br>
+
+Our goal is to estimate the accuracy of out regression function.
+Firstly, we are going to evaluate for each validation subset the following empirical prediction error:
+$$\widehat{EPE}_{i}=\frac{1}{n / k} \sum_{j \in\mathcal{k}_{i}}\left(\hat{f}_{-i}\left(x_{j}\right)-y_{j}\right)^{2}$$
+ $k = 5$ is the total number of subsets <br>
+ ${B}_{i}$ are the subsets after we divide them. <br>
+ $\hat{f}_{-i}$ is the data the prediction function we got from the training set (for $k-1$ subsets).  <br>
+
+Then, The empirical generalization error is the average of the $k$ empirical prediction errors:
+
+```{r 5-Fold Cross Validation}
+five_fcv <- function(data, h = 0) {
+  shuffled_data <-
+    data[sample(1:nrow(data)),] #Shuffling the dataset.
+  dataset_amount = nrow(shuffled_data) / 5 #Amount of observations per one subset.  We divide n by 5 because it's 5-Fold Cross Validation.
+  cut_indx <- seq(1, nrow(shuffled_data), dataset_amount) #Sets cutting points in the datasets
+  epe_vector <- c() #Empirical errors vector - will be used to calculate the empirical generalization in the end.
+  
+  #Splitting the data to 5 random subsets:
+  k1 <- shuffled_data[cut_indx[1]:(cut_indx[2] - 1), ]
+  k2 <- shuffled_data[cut_indx[2]:(cut_indx[3] - 1), ]
+  k3 <- shuffled_data[cut_indx[3]:(cut_indx[4] - 1), ]
+  k4 <- shuffled_data[cut_indx[4]:(cut_indx[5] - 1), ]
+  k5 <- shuffled_data[cut_indx[5]:nrow(shuffled_data), ]
+  
+  #a list containing all the subsets:
+  k_subsets = list(
+    k1 = k1,
+    k2 = k2,
+    k3 = k3 ,
+    k4 = k4 ,
+    k5 = k5)
+  #a loop for testing all the different subsets, each at a time:
+  for (i in names(k_subsets)) {
+    #Creating Train-Test groups, The index i is the subset that is used as a validation  subset.
+    train_names <- c(names(k_subsets)[!names(k_subsets) %in% i])
+    train_data <-
+      rbind(k_subsets[[train_names[1]]], k_subsets[[train_names[2]]],
+            k_subsets[[train_names[3]]], k_subsets[[train_names[4]]])
+    if (h != 0) {
+      #Using the kernel regression function with the new subsets:
+      train_reg <-
+        kernel_regression(train_x = train_data[, 1],
+                          train_y = train_data[, 2],
+                          h,
+                          test_x = k_subsets[[i]][, 1])
+      
+      #Empirical Prediction Error is evaluated on one subset as validation set:
+      epe_vector <- c(epe_vector, (1 / dataset_amount) * sum((train_reg$y_hat - k_subsets[[i]][, 2])^2))
+    }
+    else{
+      #Using Polynomial regression (when h is 0):
+      train_reg <- lm(train_data[, 2] ~ poly(train_data[, 1], 2))
+      epe_vector <- c(epe_vector, (1/dataset_amount) * sum((train_reg$fitted.values - k_subsets[[i]][, 2])^2))
+    }
+  }
+  emp_gen_error = 1 / 5 * sum(epe_vector) #The empirical generalization  -> Accuracy for h value.
+  return(emp_gen_error)
+}
+```
+
+**Estimating Expected in-sample prediction error: ** <br>
+We are forecasting for observations that were part of the original  sample - thus it is called in-sample forecast.
+This time we need to estimate the following expression for each $h$ value:
+$$E P E_{i n}(\mathcal{T})=\frac{1}{n} \sum E_{Y_{i}^{*} \mid X=\mathbf{x}_{i}}\left[\left(Y_{i}^{*}-\hat{f}\left(\mathbf{x}_{i}\right)\right)^{2} \mid \mathcal{T}\right]$$
+
+
+```{r In-Sample expected error}
+epe_in_func <- function(x_vector, lambda, regression_function) {
+  epe_in <- c()
+  
+  #Sampling new 50 sets of y (given x) and calculating the mean of their epe_in:
+  for (i in seq(50)) {
+    new_y <- sample_f(use_x = x_vector, n = length(x_vector), lambda)[, 2]
+    epe_in <-
+      rbind(epe_in, (mean(new_y - regression_function) ^ 2))
+  }
+  epe_in <- mean(epe_in)
+  return(epe_in)
+}
+```
+
+The expression above is entirely based on our original training set and no extra data was sampled.
+$Y_{i}^{*}$ is a new respone variable sampled at $X=\mathbf{x}_{i}$ , so were going to use our first function (simulation Function) with given ${x}_{i}$ values. <br>
+
+
+**Estimating Expected Out of Sample prediction error: ** <br>
+Now, we are forecasting for observations that weren't part of the original data sample - thus it is called out-of-sample forecast.
+```{r Out-Of-Sample expected prediction error}
+epe_out_func <- function(new_xy, fitted_values_vector) {
+  epe_out <- mean((new_xy - fitted_values_vector) ^ 2)
+  return(epe_out)
+}
+```
+<br>
+**Running all functions for different h: **<br>
+```{r Running all functions for different h, warning=FALSE}
+#Defining h:
+h <- c(0.1, 0.5, 1, 3, 4)
+sigma2 = 0.3 #We assume that sigma is given.
+results <- data.frame()
+
+#Generating Datasets:
+sim1 <- sample_f(n = 60,use_x = c(),lambda = 1.5,sigma2 = 0.3)
+sim2 <- sample_f(n = 60,use_x = c(),lambda = 5,sigma2 = 0.3)
+sim3 <- sample_f(n = 300,use_x = c(),lambda = 1.5,sigma2 = 0.3)
+sim4 <- sample_f(n = 300,use_x = c(),lambda = 5,sigma2 = 0.3)
+
+simulations <- list(sim1 = sim1,sim2 = sim2,sim3 = sim3,sim4 = sim4)
+
+for (i in h) {
+  #Kernel Regression for each h:
+  kernel1 <-
+    kernel_regression(simulations$sim1[, 1], simulations$sim1[, 2], h = i)
+  kernel2 <-
+    kernel_regression(simulations$sim2[, 1], simulations$sim2[, 2], h = i)
+  kernel3 <-
+    kernel_regression(simulations$sim3[, 1], simulations$sim3[, 2], h = i)
+  kernel4 <-
+    kernel_regression(simulations$sim4[, 1], simulations$sim4[, 2], h = i)
+  
+  #Empirical Error for each h:
+  err1 <- err(y = simulations$sim1[, 2], y_hat = kernel1$y_hat)
+  err2 <- err(y = simulations$sim2[, 2], y_hat = kernel2$y_hat)
+  err3 <- err(y = simulations$sim3[, 2], y_hat = kernel3$y_hat)
+  err4 <- err(y = simulations$sim4[, 2], y_hat = kernel4$y_hat)
+  
+  #Expected Optimisim for each h:
+  eop1 <-
+    eop(reg_weights_matrix = kernel1$weights ,sigma2 = 0.3,n = length(kernel1$y_hat))
+  eop2 <- eop(reg_weights_matrix = kernel2$weights ,sigma2 = 0.3,n = length(kernel2$y_hat))
+  eop3 <- eop(reg_weights_matrix = kernel3$weights ,sigma2 = 0.3,n = length(kernel3$y_hat))
+  eop4 <- eop(reg_weights_matrix = kernel4$weights ,sigma2 = 0.3,n = length(kernel4$y_hat))
+  
+  #Estimate the accuracy of the regression using 5-fold cross-validation error, for each h:
+  accuracy1 <- five_fcv(data = simulations$sim1, h = i)
+  accuracy2 <- five_fcv(data = simulations$sim2, h = i)
+  accuracy3 <- five_fcv(data = simulations$sim3, h = i)
+  accuracy4 <- five_fcv(data = simulations$sim4, h = i)
+  
+  #In-Sample Expected error (EPE_in) for each h:
+  EPE_in1 <- epe_in_func(x_vector = simulations$sim1[1,] ,lambda = 1.5 ,regression_function = kernel1$y_hat)
+  EPE_in2 <- epe_in_func(x_vector = simulations$sim2[1,] ,lambda = 5 ,regression_function = kernel2$y_hat)
+  EPE_in3 <- epe_in_func(x_vector = simulations$sim3[1,] ,lambda = 1.5 ,regression_function = kernel3$y_hat)
+  EPE_in4 <- epe_in_func(x_vector = simulations$sim4[1,] ,lambda = 5 ,regression_function = kernel4$y_hat)
+  
+  #Out of sample expected prediction error (EPE) of our regression:
+  #Re-Sampling for each combination of lambda and n:
+  re_sim1 <- sample_f(n = length(sim1[, 1]),lambda = 1.5,sigma2 = 0.3)
+  re_sim2 <- sample_f(n = length(sim2[, 1]),lambda = 5,sigma2 = 0.3)
+  re_sim3 <- sample_f(n = length(sim3[, 1]),lambda = 1.5,sigma2 = 0.3)
+  re_sim4 <- sample_f(n = length(sim4[, 1]),lambda = 5,sigma2 = 0.3)
+  
+  resampling_simulations <-list(re_sim1 = re_sim1,re_sim2 = re_sim2,re_sim3 = re_sim3,re_sim4 = re_sim4)
+  
+  epe_out1 <-
+    epe_out_func(new_xy = re_sim1[, 2], fitted_values_vector = kernel1$y_hat)
+  epe_out2 <-
+    epe_out_func(new_xy = re_sim2[, 2], fitted_values_vector = kernel2$y_hat)
+  epe_out3 <-
+    epe_out_func(new_xy = re_sim3[, 2], fitted_values_vector = kernel3$y_hat)
+  epe_out4 <-
+    epe_out_func(new_xy = re_sim4[, 2], fitted_values_vector = kernel4$y_hat)
+  
+  #Gathering all the results into a dataframe:
+  sim1_results <-
+    list(n = 60,lambda = 1.5,h = i,err = err1,eop = eop1,accuracy = accuracy1,EPE_in = EPE_in1,EPE = epe_out1)
+  sim2_results <-
+    list(n = 60,lambda = 5,h = i,err = err2,eop = eop2,accuracy = accuracy2,EPE_in = EPE_in2,EPE = epe_out2)
+  sim3_results <-
+    list(n = 300,lambda = 1.5,h = i,err = err3,eop = eop3,accuracy = accuracy3,EPE_in = EPE_in3,EPE = epe_out3)
+  sim4_results <-
+    list(n = 300,lambda = 5,h = i,err = err4,eop = eop4,accuracy = accuracy4,EPE_in = EPE_in4,EPE = epe_out4)
+  results = rbind(results,sim1 = sim1_results,sim2 = sim2_results,sim3 = sim3_results,sim4 = sim4_results)
+}
+#Edit Row names and print:
+row.names(results) = make.names(rep(c("sim1", "sim2", "sim3", "sim4"), length(h)), unique = TRUE)
+```
+
+The following plot is when $\lambda = 1.5$ :
+
+We used some sqrt scaling on the accuracy to avoid big gaps in both graphs, It makes the graph more readable. 
+Note that during the following analysis, we treat the scaled columns as if they weren't scaled , It was made for visual purposes only.
+
+```{r Final Graph Lambda 1.5, echo=FALSE, fig.align = 'center'} 
+
+lambda1_60 <- results %>% filter(lambda==1.5) %>% filter(n ==60)
+lambda1_300 <- results %>% filter(lambda==1.5) %>% filter(n ==300)
+fig <- plot_ly(lambda1_60, x = ~h, y = ~(err), name = 'Err n=60', type = 'scatter', mode = 'lines', line = list(width = 2, color = "blue"))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(eop), name = 'Eop n=60', mode = 'lines',line = list( color = "orange",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(EPE_in), name = 'EPE_IN n=60', mode = 'lines',line = list( color = "red",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(EPE), name = 'EPE n=60', mode = 'lines',line = list( color = "green",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~sqrt(accuracy), name = 'Accuracy n=60', mode = 'lines',line = list( color = "purple",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(err), name = 'Err n=300', mode = 'lines',line = list( color = "blue",width = 2  ,dash = 'dot'))
+fig <- fig %>% add_trace(data = lambda1_300,y = ~(eop), name = 'Eop n=300',mode = 'lines',line = list( color = "orange",width = 2 ,dash = 'dot')) 
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(EPE_in), name = 'EPE_IN n=300', mode = 'lines',line = list( color = "red",width = 2 ,dash = 'dot' ))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(EPE), name = 'EPE n=300', mode = 'lines',line = list( color = "green",width = 2 ,dash = 'dot'))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~sqrt(accuracy), name = 'Accuracy n=300', mode = 'lines',line = list( color = "purple",width = 2,dash = 'dot' ))
+fig
+```
+Looking at the plot, we can see that most of the curves converge around $h=3$, which means that we'd  choose $h <3$ if we wanted to reduce some of the errors and get higher accuracy.
+For small $\lambda$ it seems that $E P E_{i n}$ and $EPE$ are relativly close to each-other and it implies that the trained model works well with new observations  (especially for $n\geq300$).
+
+
+The following plot is when $\lambda = 5$ :
+```{r Final Graph Lambda 5, echo=FALSE, fig.align = 'center'}
+lambda1_60 <- results %>% filter(lambda==5) %>% filter(n ==60)
+lambda1_300 <- results %>% filter(lambda==5) %>% filter(n ==300)
+fig <- plot_ly(lambda1_60, x = ~h, y = ~(err), name = 'Err n=60', type = 'scatter', mode = 'lines', line = list(width = 2, color = "blue"))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(eop), name = 'Eop n=60', mode = 'lines',line = list( color = "orange",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(EPE_in), name = 'EPE_IN n=60', mode = 'lines',line = list( color = "red",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~(EPE), name = 'EPE n=60', mode = 'lines',line = list( color = "green",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_60, y = ~sqrt(accuracy), name = 'Accuracy n=60', mode = 'lines',line = list( color = "purple",width = 2 ))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(err), name = 'Err n=300', mode = 'lines',line = list( color = "blue",width = 2  ,dash = 'dot'))
+fig <- fig %>% add_trace(data = lambda1_300,y = ~(eop), name = 'Eop n=300',mode = 'lines',line = list( color = "orange",width = 2 ,dash = 'dot')) 
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(EPE_in), name = 'EPE_IN n=300', mode = 'lines',line = list( color = "red",width = 2 ,dash = 'dot' ))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~(EPE), name = 'EPE n=300', mode = 'lines',line = list( color = "green",width = 2 ,dash = 'dot'))
+fig <- fig %>% add_trace(data = lambda1_300, y = ~sqrt(accuracy), name = 'Accuracy n=300', mode = 'lines',line = list( color = "purple",width = 2,dash = 'dot' ))
+fig
+
+```
+
+The $Eop (ExpectedOptimism)$, is the difference betweenthe in-sample error, and how well the model would predict on new data taken at exactly The same $x{i}$ values.
+We can see that in both plots, the $Eop$  decreases as $h$ increases.
+For the second plot, we see that the curves converge sooner, and we suggest that it derives from the properties of $sin$ function, which becomes more compressed for higher $x$ values, in this case, multiplying by $\lambda$ ->$sin(\lambda x)$  made the data points closer, thus the estimators converge sooner. <br>
+
+**Quadratic Regression** <br>
+Next, we'd like to fit a quadratic regression to the data (2nd degree):
+$$y=\beta_{0}+\beta_{1} x+\beta_{2} x^{2}+\varepsilon$$
+```{r Quadratic Regression}
+quadratic1 = lm(sim1[, 2] ~ poly(sim1[, 1], 2))
+quadratic2 = lm(sim2[, 2] ~ poly(sim2[, 1], 2))
+quadratic3 = lm(sim3[, 2] ~ poly(sim3[, 1], 2))
+quadratic4 = lm(sim4[, 2] ~ poly(sim4[, 1], 2))
+
+simulations <- list(
+  sim1 = sim1,
+  sim2 = sim2,
+  sim3 = sim3,
+  sim4 = sim4)
+```
+
+**Repeating the simulations above using the same data:**
+```{r Repeat The Regression errors calculations for quadratic regreesion}
+results_quadratic <- data.frame()
+
+#Empirical Error :
+err1 <-
+  err(y = simulations$sim1[, 2], y_hat = quadratic1$fitted.values)
+err2 <-
+  err(y = simulations$sim2[, 2], y_hat = quadratic2$fitted.values)
+err3 <-
+  err(y = simulations$sim3[, 2], y_hat = quadratic3$fitted.values)
+err4 <-
+  err(y = simulations$sim4[, 2], y_hat = quadratic4$fitted.values)
+
+#Expected Optimisim :
+eop1 <- eop(0 , sigma2 = 0.3, n = length(quadratic1$fitted.values))
+eop2 <- eop(0, sigma2 = 0.3, n = length(quadratic2$fitted.values))
+eop3 <- eop(0, sigma2 = 0.3, n = length(quadratic3$fitted.values))
+eop4 <- eop(0, sigma2 = 0.3, n = length(quadratic4$fitted.values))
+
+#Estimate the accuracy of the regression using 5-fold cross-validation error:
+accuracy1 <- five_fcv(data = simulations$sim1, h = 0)
+accuracy2 <- five_fcv(data = simulations$sim2, h = 0)
+accuracy3 <- five_fcv(data = simulations$sim3, h = 0)
+accuracy4 <- five_fcv(data = simulations$sim4, h = 0)
+
+#In-Sample Expected error (EPE_in):
+EPE_in1 <-epe_in_func(x_vector = simulations$sim1[1, ] ,lambda = 1.5 ,regression_function = quadratic1$fitted.values)
+EPE_in2 <-epe_in_func(x_vector = simulations$sim2[1, ] ,lambda = 5 ,regression_function = quadratic2$fitted.values)
+EPE_in3 <-epe_in_func(x_vector = simulations$sim3[1, ] ,lambda = 1.5 ,regression_function = quadratic3$fitted.values)
+EPE_in4 <-epe_in_func(  x_vector = simulations$sim4[1, ] ,  lambda = 5 ,  regression_function = quadratic4$fitted.values)
+
+#Out of sample error (EPE):
+epe_out1 <-
+  epe_out_func(new_xy = re_sim1[, 2],
+               fitted_values_vector = quadratic1$fitted.values)
+epe_out2 <-
+  epe_out_func(new_xy = re_sim2[, 2],
+               fitted_values_vector = quadratic2$fitted.values)
+epe_out3 <-
+  epe_out_func(new_xy = re_sim3[, 2],
+               fitted_values_vector = quadratic3$fitted.values)
+epe_out4 <-
+  epe_out_func(new_xy = re_sim4[, 2],
+               fitted_values_vector = quadratic4$fitted.values)
+
+#Gathering all the results into a dataframe:
+sim1_results <-list(  n = 60,  lambda = 1.5,  err = err1,  eop = eop1,  accuracy = accuracy1,  EPE_in = EPE_in1,  EPE = epe_out1)
+sim2_results <-list(  n = 60,  lambda = 5,  err = err2,  eop = eop2,  accuracy = accuracy2,  EPE_in = EPE_in2,  EPE = epe_out2)
+sim3_results <-list(  n = 300,  lambda = 1.5,  err = err3,  eop = eop3,  accuracy = accuracy3,  EPE_in = EPE_in3,  EPE = epe_out3)
+sim4_results <-list(  n = 300,  lambda = 5,  err = err4,  eop = eop4,  accuracy = accuracy4,  EPE_in = EPE_in4,  EPE = epe_out4)
+
+results_quadratic = rbind(results_quadratic,sim1 = sim1_results,sim2 = sim2_results,sim3 = sim3_results,sim4 = sim4_results)
+```
+```{r Quadratic results}
+knitr::kable(results_quadratic)
+```
+We can see that the Quadratic regression is similar to the Kernel results (where $h$ was big). As we showed, when $h$ increased, the Kernel becomes less accurate (because of the Bias-Variance trade-off). In our opinion, the quadratic  regression is less flexible because it tries to fit the data in one big parabolic curve, whereas Kernel regression does not depend on the polynomial degree, but on the bandwidth we set and the kernel we choose. Thus, for small $h$ such as we tried in the first plot (1.3), we'd get better fit. When $h$ increases, the curve becomes wider and trends will become harder to identify (and more like quadratic regression).
+
+**Question 3:** <br>
+For the following section, we're going to use Covid19 data in Israel. In particular, we are going to be analyzing new cases per-day from February 2020 to May 2022. Then, we'll use Spline regression to create a fitted values curve for the data. <br> 
+```{r Applying Regression Curve}
+df <- read.csv("Israel_covid19_newdetections.csv")
+df[,1] <- as.Date(df[,1], "%d-%m-%Y")
+x <- df[,1] #Days
+y <- df[,2] # Cases
+day_diff <- difftime(max(x), min(x), units = "days")
+day_numeric <- 0:day_diff
+x <- day_numeric
+df[,3] <- x #Adding numeric column for the days passed in the dataframe.
+df[,4] <- as.character(format(df[,1], "%y-%b"))
+```
+**Creating the regression line using Cubic spline regression:** <br>
+After a few tests, we decided to set the indicators to be  at the 300th day and 650th day of the pandemic. Our goal was to recognize every wave on infections by having a smooth curve without over fitting the data.
+We chose this method of of regression because we wanted to have continuous second derivative so we could see the graph of the slope as well.
+
+```{r Question 3 Data}
+reg_spline = lm(y ~ x + I(x^2)+ I(x^3)+
+                  I((x-(300))^3*(x> 300)) +
+                  I((x-(650))^3*(x> 650)))
+# y_hat <- pmax(reg_spline$fitted,0)  #We can't have negative predictions because we predict number of cases (> = 0).
+```
+
+```{r New Cases graph , echo=FALSE, fig.align = 'center'}
+g<- ggplot(df, aes(V3, New_Cases,color="Cubic Splines Regression"))+
+  labs(title = "Covid19 in Israel -  New Cases Per-Day ")+
+    labs(colour = "Curve")+
+  geom_point(color = "blue", pch = 19, size = 0.7, alpha = 0.3)+
+  xlab("Date") + ylab("New Cases")+
+  geom_line(aes(V3, reg_spline$fitted),size = 1)+
+  theme(text = element_text(size=9), axis.text.x = element_text(angle = 90),legend.position = "right",axis.line = element_line(colour = "darkblue",size = 1, linetype = "solid"))+
+  scale_x_discrete(limits=df$V4)
+g
+```
+
+We want to get the first derivative of a cubic function (the red curve).We used indicators to separate between date ranges in the regression, thus we'd expect the derivative to be a few quadratic functions for each interval we set. <br>
+```{r Calculating derivative}
+#We based the coding of derivative on the following explanation:
+#https://stackoverflow.com/questions/6356665/
+dY <- diff(reg_spline$fitted)/diff(x)  # the derivative by x.
+dX <- rowMeans(embed(x,2)) # centers the x values for plotting.
+deriva <- as.data.frame(cbind(dX,dY))
+```
+
+**Derivative plot:**
+```{r Derivative plot  , echo=FALSE, fig.align = 'center'}
+
+g<- ggplot(deriva, aes(dX , dY,color="Derivative"))+
+  labs(title = "Covid19 in Israel -  Regression Curve Derivative  ")+
+    labs(colour = "Curve")+
+  xlab("Date") + ylab("Predicted Cases Slope")+
+  geom_line(aes(dX, dY),size = 1, color = "purple")+
+  theme(axis.text.x = element_text(angle = 90),legend.position = "right",axis.line = element_line(colour = "darkblue",size = 1, linetype = "solid"))+
+  scale_x_discrete(limits=df$V4)
+g
+```
