@@ -1,0 +1,106 @@
+---
+title: 'Lab'
+author: "Dan Shabo"
+date: "March 22, 2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+setwd('C://Users/Dan/Desktop/University/Statistics/Third Year/Statistical Learning/Lab1')
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(plotly)
+Sys.setlocale("LC_TIME", "English")
+locale("he")
+library(lubridate)
+library(scales)
+library("knitr")
+```
+
+```{r  1, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+#Data loading chunk:
+Sys.setlocale("LC_ALL", "Hebrew") #Dealing with Hebrew in the Dataframe.
+load('accidents_2013_2019.RData') #Loading Dataframe.
+code2020 <- read.csv('bycode2020.csv', header = TRUE,encoding = "UTF-8")
+names(code2020)[1] <- "Town_Name"
+
+```
+<div style="text-align: right">
+תחילה נכין את הנתונים לניתוח - נסנן ערים שיש בהן פחות מ-150 תאונות, וניצור את המרכיבים הראשיים לאחר הורדת מימד הנתונים.
+<div style="text-align: left">
+```{r, message=FALSE, warning=FALSE, error=TRUE}
+#Finding cities with more than 150 accidents:
+df <- accidents %>% select(Town_Name) %>% group_by(Town_Name) %>% count() %>%na.omit() %>% filter(n > 150)
+
+df <- accidents %>% select(Town_Name, Injured_Light, Injured_Severe, Death, Injured_0_19, Injured_20_64, Injured_65_plus) %>%filter(Town_Name == df$Town_Name)
+
+df <- aggregate(cbind(Injured_Light, Injured_Severe, Death, Injured_0_19, Injured_20_64, Injured_65_plus) ~ Town_Name, data = df, FUN = sum,na.rm=TRUE) 
+
+towns <- df$Town_Name #Saving town name's order before plotting.
+
+df <- df %>%  subset(select= -Town_Name)
+
+#Creating Pcs:
+pca.df <- princomp(x = df[, c(names(df))], cor = TRUE) 
+```
+
+<div style="text-align: right">
+
+כעת נוכל להדפיס את הגרף לאחר הורדת המימד:
+
+<div style="text-align: left">
+
+```{r  5,fig.align='center', message=FALSE, warning=FALSE}
+#This plot is based on the official plotly's user manual example*
+prin_comp <- pca.df$scores[,1:3]
+components <- prin_comp
+components <- data.frame(components)
+components <- cbind(components, towns)
+tit = 'ניתוח 3 גורמים ראשיים ל-15 ערים מובילות בתאונות '
+axis = list(showline=FALSE,
+            zeroline=FALSE,
+            gridcolor='#ffff',
+            ticklen=3) 
+
+fig <- components %>%
+  plot_ly() %>%
+  add_trace(
+    type = 'splom',
+    dimensions = list(
+      list(label='PC1', values=~Comp.1),
+      list(label='PC2', values=~Comp.2),
+      list(label='PC3', values=~Comp.3)
+    ),
+    text = ~towns,
+    colors = ~Comp.1,
+    marker = list(
+      size = 7
+      
+    )
+  ) %>% style(diagonal = list(visible = F)) %>%
+  layout(
+    title= tit
+  )
+options(warn=-1)
+fig
+```
+
+<div style="text-align: right">
+
+ראשית נציין כי ניתן להסתפק בשלושה גרפים בלבד או אפילו בגרף תלת מימדי אחד, אך בחרנו להציג את הגרפים בצורה סמטרית כדי שיהיה נוח לפענח אותם.
+
+לפי הפלטים הנ"ל, ניתן לראות כי הורדת המימד קיבצה את הערים לפי איזורים גיאוגרפים, כלומר, ניתן לראות שבכל אחד מהגרפים האזורים הצפוניים קובצו ביחד (לדוגמה, איזור הקריות, נשר, עכו וכו'). לעומתם, הערים הגדולות כגון ירושלים, תל אביב ובאר שבע ממוקמות רחוק יותר. כמו כן, קיים דמיון בדפוס התאונות בין אזורים סמוכים לערים גדולות, כמו מעלה אדומים, הקריות, עכו וכו'. הערים הגדולות, בשונה מהן, מאופיינות בדפוסים אחרים וזה נובע ככה"נ מכמות האוכלוסיה בהן (ובהתאם יותר תאונות), לכן הן ממוקמות רחוק יחסית.
+
+<div style="text-align: left">
+
+```{r}
+print(knitr::kable(round(pca.df$loadings[,1:3],3)))
+```
+
+<div style="text-align: right">
+
+אם נבחן את הטבלה לעיל, נוכל לראות כי כלל הרכיבים מושפעים בעיקר מפצועים קל וקשה. הרכיב השני מושפע בעיקר מפצועים קטינים, בעוד שהרכיב השלישי מושפע בעיקר מבני 65 ומעלה.
