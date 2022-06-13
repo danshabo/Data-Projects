@@ -5,7 +5,7 @@
  
 <a href="https://htmlpreview.github.io/?https://github.com/danshabo/Data-Projects/blob/main/Kmeans%20Implementation%20(R)/Kmeans%20Implementation.html">Project</a>
 # 2.  Gaussian-Kernel, Cross Validation, Spline Regression: #
-In the first part of this project I implemented Gaussian Kernel Regression, trained and tested it using cross validation. Then, I created Spline Regression to deal with Covid19 cases in Israel.
+In the first part of this project I implemented Gaussian Kernel Regression, trained and tested it using cross validation. Then, I created a Spline Regression curve to analyze Covid19 new cases in Israel.
 
 <a href="https://htmlpreview.github.io/?https://github.com/danshabo/Data-Projects/blob/main/Gaussian%20Kernel%20%26%20Spline%20Regression/Gaussian-Kernel_Cross_Validation_Spline.html">Project</a>
 ##### In case the plotly plots don't work, running in R is recommended
