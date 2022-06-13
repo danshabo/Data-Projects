@@ -17,3 +17,7 @@ I based my work on the article "Controlling The False Discovery Rate: A Practica
 The demonstration includes comparison between BH to some other procedures (Bonferroni, Simes etc).
 
 <a href ="https://github.com/danshabo/Data-Projects/blob/main/Benjamini%20-%20Hochberg%20FDR%20Maintaining%20Procedure%20Demonstration%20(Python)/Benjamini%20-%20Hochberg%20FDR%20Maintaining%20Procedure%20Demonstration.ipynb">Project </a>
+
+# 4. Israel Elections Regression & Data Analysis #
+In this project, I used Ordinary least squares to estimate how many votes moved from one party to another. I presented the the results using Heatmap (seaborn) and Sankey plot.
+<a href ="https://github.com/danshabo/Data-Projects/blob/main/Israel%20Elections%20Regression%20%26%20Data%20Analysis/File.ipynb">Project </a>
