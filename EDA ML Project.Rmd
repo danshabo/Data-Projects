@@ -1,0 +1,410 @@
+---
+title: "EDA, Naive Bayes, Random Forest, PCA"
+author: "Dan Shabo"
+date: "7/11/2022"
+output: html_document
+---
+```{r Libraries , echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(plotly)
+library(ggplot2)
+library(ISLR)
+library(glmnet)
+library(caret) 
+library(scales)
+library(e1071)
+library(randomForest)
+```
+
+```{r Data Loading , echo=FALSE}
+path <- getwd()
+setwd(path)
+train <- read.csv("tree_train_set.csv")
+test_new <- read.csv("tree_test_new_feat.csv")
+test_new <- test_new[,-1]
+test <- read.csv("tree_train_set.csv")
+train = train[,-1]
+test = test[,-1]
+check_feat = read.csv("tree_check_new_feat.csv")
+check_resp <- read.csv("tree_check_new_resp.csv")
+categorial_vars_names <- names(train)[11:54]
+y_train = train["tree_type"]
+```
+Every row in the data corresponds to a $30\times30$ square of forest in Colorado and its properties.
+
+The are categorical variables too (from $wilderness_1$~$wilderness_4$ and $soil_1$ $~soil_40$ to tree_type)
+
+There is also a variable called $tree_type$ which classifies the trees in the data for two different types.
+
+# Exploratory Data Analysis:
+
+I need to find two variables that has an mutual relationship with the target variable (tree_type):
+Firstly, Im going to check for correlation between the continuous variables just to get a general overview and see if there's something I can't move on with:
+
+```{r Question 2 }
+y_train = train["tree_type"]
+train_cat = train[11:55]
+train_cont = cbind(train[1:10],train[55])
+cor_cont = cor(train_cont)
+knitr::kable(round(cor_cont,3))
+```
+
+
+Based on this table we can see that $Elevation$ has a strong negative correlation with the variable tree_type, we can also see that the hill shade columns have high correlation, but it makes sense because daylight becomes night, so If we wanted to make a regression, these columns could have caused multicollinearity. 
+
+
+In addition, I saw that some of the continuous variables are coded in the same way. For example, vertical & horizontal distance from water  are coded in meters. I thought that it might be interesting to check what happens if I treated them as sqared meters instead of two separate units. So, I made a new variable combining the two by multiplying them, and then I went back to check the relationships between variables:
+
+
+```{r , results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+sqrd_meters = abs(train$Hor_dist_to_water*train$Vert_dist_to_water) 
+data_mixed = cbind(sqrd_meters,train_cont)
+data_mixed = data_mixed[c(1,2,3,4,7,8,9,10,11,12)]
+pairs(data_mixed[1:9],col = data_mixed$tree_type)
+```
+
+Looking at the plot above, we can see that the two variables have sort of logarithmic relationship, but to check if it's true, it I printed a bigger plot of their graph alone. 
+
+```{r , results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+plot(y=data_mixed$Elevation,x=(data_mixed$sqrd_meters), col = alpha(data_mixed$tree_type, 0.4), pch = 1,
+            main = "Spruce & Lodgepole Pine Growing Areas",xlab = "Distance to Water (Squared Meters)",ylab = "Elevation")
+legend(x = "bottomright",          # Position
+       legend = c("Spruce","Lodgepole Pine"),  # Legend texts
+       lty = c(1, 2),           # Line types
+       col = c(1,2),
+       border = "black",
+       pch = 1,
+)          # Line colors
+```
+
+I see that most of the observations are compressed because of distance differences (we can see how the $X$ axis is coded badly), and by looking at the graph, I think that a transformation on the values could help in interpetaition. In this case,  a log transformation would extend the lower values and create space that could help me interpreting the results:
+
+```{r, results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+plot(y=data_mixed$Elevation,x=log(data_mixed$sqrd_meters), col = alpha(data_mixed$tree_type, 0.5), pch = 1,
+     cex = 0.5,       
+     main = "Spruce & Lodgepole Pine Growing Areas",xlab = "Distance to Water (Squared Meters)",ylab = "Elevation")
+legend(x = "bottomright",          # Position
+       legend = c("Spruce","Lodgepole Pine"),  # Legend texts
+       lty = c(1, 2),           # Line types
+       col = c(1,2),
+       border = "black",
+       pch = "1",
+)          # Line colors
+```
+
+Now, The graph is much easier to interpret, based on the results, We can see that the mutual relationship between the two variables to the tree_type is that both  are common around the same distance to water.
+We can see that the bold area in the plot is in the right-mid part. In my opinion, a possible interpretation could be: The farther both of the trees grow from water, the higher the elevation is. It might mean that there are not a lot  of water in higher ares or maybe the trees grow in bigger amounts when they're distant from a water source.
+Lodgepole Pine trees are common almost everywhere , but relatively more common far from water. In contrast, Spruce trees are found only in high areas. 
+
+
+# Naive Bayes
+
+For the next two sections, im going to use an external function for Naive Bayes:
+
+```{r Permutations}
+#Get train without "wilderness_1,2":
+train3= cbind(train[,1:10],train[,13:54])
+loss_table = data.frame()
+name_perm <- data.frame()
+for (i in names(train3)){
+  for (j in names(train3)){
+    if (i!=j){
+      name_perm <- rbind(name_perm,c(i,j))
+    }
+  }
+}
+colnames(name_perm) = c("Var1","Var2")
+```
+
+
+Implementing Cross-Validation function:
+
+```{r}
+cv_nb <- function(variable1,variable2,train){
+  train3 <- cbind(train[,1:10],train[,13:55])
+  #Creating names as string for the varaiables:
+  variable1 = toString(variable1)
+  variable2 = toString(variable2)
+  
+  #Sampling the train data & Creating train:
+  train3=train3[sample(20000),]
+  labels_train = train3[1:16000,53]
+  
+  #Fitting the validation data, and creating labels for validation:
+  validation = train3[16001:20000,c(variable1,variable2)]
+  labels_validation = train3[16001:20000,53]
+  train_split = train3[1:16000,c(variable1,variable2)] #Knit 
+  
+  #Classifying:
+  nb <- naiveBayes(labels_train ~., data = train_split)
+  pred <- predict(nb,validation,type="class")
+  error = prop.table(table(pred == labels_validation))[[1]]
+  result = c("Var1" = variable1,"Var2" = variable2, "Loss" = error)
+return(result)
+}
+```
+
+Running all classifications and save the results in a new table:
+```{r Running NB Algorithm}
+for (i in seq(nrow(name_perm))){
+  var1 = name_perm[i,1]
+  var2 = name_perm[i,2]
+  loss = cv_nb(variable1=var1,variable2=var2,train=train)
+  loss_table= rbind(loss_table,loss)
+}
+colnames(loss_table) = c("Var1","Var2","Loss")
+```
+
+
+The Two variables that minimize the $EPE$ for my model are:
+```{r echo=FALSE}
+print(loss_table[which.min(loss_table$Loss),])
+```
+
+
+
+
+For now, I'm going to train another model which uses all the continuous data filtered by the categorical column $wilderness_1$ and  $wilderness_2$. I'm going to run the classification algorithm for the dataset regularly, and then im going to filter the results by $wilderness_1$ and  $wilderness_2$ and see how well the model worked for each of them. For this part, cross-validation is not required.
+
+```{r}
+set.seed(102)
+#Sample train
+train3_2=train[sample(20000),]
+
+#Split train 80:20 :
+train_split = train3_2[1:16000,]
+test_split = train3_2[16001:20000,]
+
+#Label for training
+labels1_train <- train_split[,55]
+labels1_test <- test_split[,55]
+
+
+#Getting the relevant test labels for later:
+wilderness1_indecies <-test_split$wilderness_1 == 1 #Indecies for wilderness_1
+wilderness2_indecies <-test_split$wilderness_2 == 1 #Indecies for wilderness_2
+
+#Getting only continuous variables:
+train_split <- as.data.frame(cbind(train_split[1:10],labels1_train))
+test_split <- as.data.frame(cbind(test_split[1:10],labels1_test))
+
+
+#Naive bayes:
+   nb2 <- naiveBayes(labels1_train ~., data = train_split)
+   pred2 <- predict(nb2,test_split,type="class")
+   
+   
+#Error rate for each wilderness variable:
+  test_succeed = (pred2 == labels1_test)
+  unfiltered = cbind(test_split,test_succeed)
+  
+  #Filter by wilderness1:
+  wild1_df= unfiltered[wilderness1_indecies,]
+  
+  #Filter by wilderness2:
+  wild2_df= unfiltered[wilderness2_indecies,]
+```
+
+For $wilderness_1$ the success rate of the test is:
+```{r echo=FALSE}
+prop.table(table(wild1_df$test_succeed))[[2]]
+```
+Whereas For $wilderness_2$ the success rate of the test is::
+```{r echo=FALSE}
+prop.table(table(wild2_df$test_succeed))[[2]]
+```
+
+In order to understand the difference between the two variable, i'd like to use PCA on their each of the dataframes and see where does most of the variance come from (for each of the cases). I don't really need the dimension reduction in this case, but only to look at the loading of the significant PCS.
+Before doing so, i'd like to normalize the data main data that contains both of the $wilderness$ columns and then split it again. The normalization should be based on both of the $wilderness$ values dataframe, otherwise each dataframe will be normalized for its own SD and the differences won't be comparable.
+
+```{r}
+unfiltered_cont = unfiltered[1:10]
+normalized_unfiltered = (unfiltered_cont - apply(unfiltered_cont,2,mean))/apply(unfiltered_cont,2,sd)
+```
+
+For $wilderness_1$:
+
+```{r PCA 1}
+#Filter data again
+wild1_df_centered = normalized_unfiltered[wilderness1_indecies,]
+#PCA Wilderness1
+wild1_df_cont = wild1_df_centered[1:10]
+wild1.pca = prcomp(wild1_df_cont)
+summary(wild1.pca)
+```
+
+For $wilderness_2$:
+
+```{r PCA 2}
+#Filter data again
+wild2_df_centered = normalized_unfiltered[wilderness2_indecies,]
+#PCA Wilderness2
+wild2_df_cont = wild2_df[1:10]
+wild2.pca = prcomp(wild2_df_cont)
+summary(wild2.pca)
+```
+
+We can see that for each of the the cases, we need to look at $3$ PCS to get the full variance in the data.
+Now let's look at the PCS of $wilderness_1$:
+```{r echo=FALSE}
+knitr::kable((wild1.pca$rotation[,1:3]))
+```
+
+For the first (which is way more significant) we can see that the distance from elevation, distnace to wildfires and distance to road where the most significant for the varaince. Same results for the second PC.
+
+```{r,echo=FALSE}
+knitr::kable((wild2.pca$rotation[,1:3]))
+```
+For the second $wilderness$ we see that distance to wildfire explains most of the variance for the first two PCS (which is almost all the variance in the data).
+
+
+I'd like to focus on each wilderness' observations of trees Elevation compared to their distance to wildfire ignition spots to show the major difference between the two, and then discuss the how it might effect my classifier:
+
+```{r, results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+plot_differences = data.frame()
+wilderness_vector = c()
+wilderness_vector[wilderness1_indecies] = 1
+wilderness_vector[wilderness2_indecies] = 2
+plot_differences = cbind(unfiltered,wilderness_vector)
+
+COL <- adjustcolor(c("green", "blue")[plot_differences$wilderness_vector], alpha.f = 0.3)
+plot(y= plot_differences$Elevation, x = plot_differences$Hor_dist_to_road, col= COL, pch = 20, cex = 1,
+            main = "Elevation vs Distance to Road",ylab = "Elevation",xlab = "Distance to Road")
+
+legend(x = "topright",          # Position
+       legend = c("Wildernees 1 ","Wildernees 2"),  # Legend texts
+       lty = c(1, 2),           # Line types
+       col = c("green","blue"),
+       border = "black",
+       pch = 20,
+)          # Line colors)
+
+```
+
+I chose to focus on major differences I found between the two  in the PCA.
+
+We can see that aside from the separation between the value, there's a big difference in the quantities of trees between the two. $wilderness2$ which is the smaller one, located higher and closer to road.
+$wilderness1$ has more trees, common in different elevations, and could be close to a road, or very far from it.
+
+**How does this effect the classifier? ** 
+
+1.The conditional probabilities matrix of each of the variables (Elevation, Distance to road) would have a an odds ratio that should effect my classifier in a way that as the Elevation increases, its harder to classify. For distance road, the farther the distance is, it is easier to classify correctly.
+
+2. Quantity -  as I've discussed,for both cases that Elevation is an important variable for classifying. But the frequency of $wilderness1$ compared to the frequency of $wilderness2$ causes a lot of false negatives. It means, that for $wilderness1$ (which has more trees) we'd classify more trees correctly, but for $wilderness2$ we'd predict worse because it's hard for the classifier to recognize (due to lower quantity).
+we can see this in the matrix of elevation from the classifier:
+```{r echo=FALSE}
+print(nb2$tables$Elevation)
+```
+
+
+
+# Lasso & Random Forest
+
+Firstly, I'd like to find the variables which are the most relevant for classification so I can get the most accurate prediction.
+
+$$\hat{\beta}_{\text {Lasso }}=\operatorname{argmin}_{\beta}\left(\|X \beta-Y\|_{2}^{2}+\lambda\|\beta\|_{1}\right)$$
+
+I chose to do so because under a certain $\beta$ (which minimizes the $MSE$), the lasso regression could set some coefficients on zero, and as a result, my model will be more accurate.
+Now, I'm going to use the regression and see if some coefficients become zero as I increase $\lambda$.
+For the lasso, I chose the $\lambda$ that reduces the $MSE$ the most using the built-in function for cross validation. 
+```{r Variable Selection knitr::kable}
+set.seed(123)
+train_4 <- as.matrix(train[1:54])
+y_train_4 <-  as.matrix(y_train)
+lasso.fit = cv.glmnet(x = train_4, y = y_train_4, alpha = 1, type.measure = "mse")
+```
+
+Looking at the following plot, we can see that there are some coefficients that don't have any affect on $y$ as $\lambda$ increases:
+```{r,results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+plot(lasso.fit$glmnet.fit, "lambda") 
+```
+
+The results above are relevant for all values of $\lambda$, however, I selected the coefficients under the one that minimized the $MSE$ $\lambda = 0.000298007$.
+
+Thus, I'm going to look at their coefficients predicted by the lasso and keep only those who had any affect in predicting $y$. 
+
+```{r}
+coef <- data.frame()
+names_for_classification = c()
+names_coef = (rownames(abs(as.matrix(coef(lasso.fit)))))[2:length(coef(lasso.fit))]
+vals_coef = abs(as.matrix(coef(lasso.fit)))[2:length(coef(lasso.fit))]
+coef <- cbind(names_coef,vals_coef)
+coef = coef[which(coef[,2]>0),]
+
+#I tried here to set a new threshold to the coef(0.1) and see how it effects the outcome:
+# coef = coef[which(coef[,2] > 0.01),]
+
+names_for_classification = c(coef[,1])
+knitr::kable(coef)
+```
+
+Out of 54 predictors, 23 remained.
+I tried here to set a new threshold to the coefficients ($0.1$) and see how it effects the outcome, but the accuracy dropped in $\approx 0.1%$ so i left it as it was before.
+
+
+
+Now I'm going to update my train set accordingly and use a classification algorithm.
+Firstly, i'd like to split the data ($train = 0.8, test=0.2$) :
+
+```{r}
+#Get only relevant columns:
+train_main_4 = train[,c(names_for_classification)]
+train_main_4 = cbind(train_main_4,train[55])
+
+#Sampling the train data & Creating train:
+train_main_4=train_main_4[sample(20000),]
+labels_train4 = train_main_4[1:16000,length(names(train_main_4))]
+
+#Fitting the validation data, and creating labels for validation:
+validation4 = train_main_4[16001:20000,1:(length(names(train_main_4))-1)]
+labels_validation4 = train_main_4[16001:20000,length(names(train_main_4))]
+
+```
+
+
+I'm going to use Random Forest algorithm for classifying  and examine the results. I chose this algorithm because it's flexible and non-linear, and I think it could classify well for this data.
+
+
+Running the algorithm and looking at its preformance for the out-of-bag observations:
+
+```{r , results = FALSE, fig.align = 'center', echo=FALSE, fig.align = 'center'}
+rf1 = randomForest(as.factor(tree_type) ~ ., data = train_main_4)
+plot(rf1)
+```
+
+To estimate the best iteration of the algorithm, I can use the estimate the out-of-bag samples (OOB). Out-of-bag are the samples that haven't got to the trees, there are usually around $ 0.3$ of them using gradient boosting or random forest. It happens because these are bootstrapping based algorithms. Thus, we should keep in mind that we can use this observations as inner-validation. In the graph above, the OOB is presented by the black curve.
+
+
+
+Here’s where the best iteration estimated based on the OOB method:
+```{r}
+pred_rf1 = predict(rf1,validation4, type="response")
+best.iter = which.min(rf1$err.rate[,1])
+best.iter
+```
+
+At first I thought that maybe tuning the number of trees would help my predictions. However, I do not find it necessary to tune them, because I see that the OOB converges pretty early anyways. and I don't want to over fit the training. Generally when using random forest,  there are hundreds of trees being used,thus the error converges relatively fast. In my case, we can see that the algorithm converged around the 50th tree.
+
+The results I got for my own validation set using this random forest:
+
+```{r , echo=FALSE}
+knitr::kable(prop.table(table(pred_rf1 == labels_validation4)))
+```
+
+
+Calculating a confusion matrix using the validation data (the data split I used for training) outcome.
+```{r, echo=FALSE}
+reference = as.factor(labels_validation4)
+cm = confusionMatrix(data = pred_rf1,reference =  reference)
+print(cm$table)
+```
+
+
+Thus, the accuracy is:
+
+
+```{r , echo=FALSE}
+print(cm$overall[1])
+```
