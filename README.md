@@ -1,6 +1,6 @@
 # Data-Projects
 
-## 1. Random Forest, Naive Bayes, PCA Exploratory Data Analysis : #
+## 1. Random Forest, Naive Bayes, PCA & Exploratory Data Analysis : #
 
 In this project I practiced data analysis and used machine learning algorithms. The first part is exploratory data analysis and data visualization, whereas the second part is dedicated to  solving a classification problem using Naive Bayes and Random Forest. The dataset used in this project was The Forest CoverType dataset which documents different types of trees in Colorado (additional data info can be found in the folder of the project).
 
