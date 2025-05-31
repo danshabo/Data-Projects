@@ -44,8 +44,8 @@ rank_df = None
 def calculate_trade_profit(*args, **kwargs):
     f.calculate_trade_profit(*args, **kwargs)
 
-def clear_console():
-    os.system('cls' if os.name == 'nt' else 'clear')
+
+def logo():
     print("Welcome to Theta")
     GREEN = "\033[92m"
     RESET = "\033[0m"
@@ -59,8 +59,9 @@ def clear_console():
                          
 {RESET}"""
     print(logo)
-    print("Then use stats('TICKER') or calculate_trade_profit(...) as needed.")
 
+def clear_console():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def collect_data():
     global yahoo_df, yahoo_df_agg, rank_df
@@ -84,19 +85,7 @@ def stats(ticker):
 
 if __name__ == "__main__":
     os.system('cls')
-    print("Welcome to Theta")
-    GREEN = "\033[92m"
-    RESET = "\033[0m"
-    logo = f"""{GREEN}
- _   _          _        
-| | | |        | |       
-| |_| |__   ___| |_ __ _ 
-| __| '_ \ / _ \ __/ _` |
-| |_| | | |  __/ || (_| |
- \__|_| |_|\___|\__\__,_|
-                         
-{RESET}"""
-    print(logo)
+    logo()
     print("Type collect_data() to download and process data.")
     import code
     code.interact(local=globals())
