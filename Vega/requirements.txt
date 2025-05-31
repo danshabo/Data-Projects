@@ -1,0 +1,10 @@
+yfinance
+pandas
+tqdm
+matplotlib
+mplfinance
+numpy
+scipy
+requests
+seaborn
+upsetplot
