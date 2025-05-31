@@ -28,8 +28,8 @@ warnings.filterwarnings("ignore")
 
 def yahoo_data():
     global yahoo_df 
-    # tickers = indices + global_indices
-    tickers = test
+    tickers = indices + global_indices
+    # tickers = test
     dfs = []
     with tqdm(tickers, desc="Downloading data") as pbar:
         for ticker in pbar:
